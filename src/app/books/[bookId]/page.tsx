@@ -1,18 +1,70 @@
 'use client';
 
 import { useLocalStorage } from '@/hooks/useLocalStorage';
-import type { Book, Chapter, Character, WorldSetting } from '@/lib/types';
+import type { Book, BookNode, Character, WorldSetting } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import Header from '@/components/Header';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Globe, Users, FileText } from 'lucide-react';
 import ChapterManager from '@/components/ChapterManager';
 import Editor from '@/components/Editor';
-import WorldBookManager from '@/components/WorldBookManager';
-import CharacterCardManager from '@/components/CharacterCardManager';
 import { Skeleton } from '@/components/ui/skeleton';
+
+// --- Helper functions for tree traversal ---
+
+const findNodeInTree = (nodes: BookNode[], nodeId: string): BookNode | null => {
+  for (const node of nodes) {
+    if (node.id === nodeId) return node;
+    if (node.children) {
+      const found = findNodeInTree(node.children, nodeId);
+      if (found) return found;
+    }
+  }
+  return null;
+};
+
+const findFirstFile = (nodes: BookNode[]): BookNode | null => {
+    for (const node of nodes) {
+        if (node.type === 'file') {
+            return node;
+        }
+        if (node.children) {
+            const found = findFirstFile(node.children);
+            if (found) return found;
+        }
+    }
+    return null;
+};
+
+const updateNodeInTree = (nodes: BookNode[], nodeId: string, updates: Partial<BookNode>): BookNode[] => {
+    return nodes.map(node => {
+        if (node.id === nodeId) {
+            return { ...node, ...updates };
+        }
+        if (node.children) {
+            return { ...node, children: updateNodeInTree(node.children, nodeId, updates) };
+        }
+        return node;
+    });
+};
+
+const flattenNodes = (nodes: BookNode[]): BookNode[] => {
+  const fileNodes: BookNode[] = [];
+  const traverse = (nodeList: BookNode[]) => {
+    for (const node of nodeList) {
+      if (node.type === 'file') {
+        fileNodes.push(node);
+      }
+      if (node.children) {
+        traverse(node.children);
+      }
+    }
+  };
+  traverse(nodes);
+  return fileNodes;
+};
 
 export default function BookPage() {
   const router = useRouter();
@@ -23,11 +75,40 @@ export default function BookPage() {
   const [worldSettings, setWorldSettings] = useLocalStorage<WorldSetting[]>('worldSettings', []);
   const [characters, setCharacters] = useLocalStorage<Character[]>('characters', []);
   
-  const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
+  const [activeChapter, setActiveChapter] = useState<BookNode | null>(null);
 
   // Lifted state for AI Assistant
   const [aiRole, setAiRole] = useState('一个有创意的故事作家');
   const [aiRoleDisplay, setAiRoleDisplay] = useState('一个有创意的故事作家');
+
+  // --- Data Migration ---
+  // This useEffect handles the migration from the old Chapter[] structure to the new BookNode[] tree structure.
+  useEffect(() => {
+    const booksNeedMigration = books.some(book =>
+      book.chapters && book.chapters.length > 0 && !('type' in book.chapters[0])
+    );
+
+    if (booksNeedMigration) {
+      console.log("Migrating data to support hierarchical chapters...");
+      const migratedBooks = books.map(book => {
+        if (book.chapters && book.chapters.length > 0 && !('type' in book.chapters[0])) {
+          return {
+            ...book,
+            // @ts-ignore - We know this is the old structure
+            chapters: book.chapters.map((chapter: any) => ({
+              id: chapter.id,
+              title: chapter.title,
+              content: chapter.content || '',
+              url: chapter.url,
+              type: 'file', // All old chapters become files
+            })),
+          };
+        }
+        return book;
+      });
+      setBooks(migratedBooks);
+    }
+  }, [books, setBooks]);
 
 
   const currentBook = useMemo(() => {
@@ -37,24 +118,35 @@ export default function BookPage() {
   useEffect(() => {
     if (currentBook) {
       // If there is no active chapter OR the active chapter is not in the current book's chapter list
-      if (!activeChapterId || !currentBook.chapters.some(c => c.id === activeChapterId)) {
-        // Set the first chapter as active, or null if there are no chapters
-        setActiveChapterId(currentBook.chapters[0]?.id || null);
+      const isChapterInBook = activeChapter ? findNodeInTree(currentBook.chapters, activeChapter.id) : null;
+      if (!activeChapter || !isChapterInBook) {
+        // Set the first file as active, or null if there are no files
+        setActiveChapter(findFirstFile(currentBook.chapters));
       }
     } else {
         // if the book is not found (e.g., deleted), clear the active chapter
-        setActiveChapterId(null);
+        setActiveChapter(null);
     }
-  }, [currentBook, activeChapterId]);
+  }, [currentBook, activeChapter]);
 
+  const flattenedChapters = useMemo(() => {
+    return currentBook ? flattenNodes(currentBook.chapters) : [];
+  }, [currentBook]);
 
-  const activeChapter = useMemo(() => {
-    if (!currentBook || !activeChapterId) return null;
-    return currentBook.chapters.find(c => c.id === activeChapterId) || null;
-  }, [currentBook, activeChapterId]);
-  
-  const setActiveChapter = (chapter: Chapter | null) => {
-    setActiveChapterId(chapter ? chapter.id : null);
+  const handlePreviousChapter = () => {
+    if (!activeChapter) return;
+    const currentIndex = flattenedChapters.findIndex(c => c.id === activeChapter.id);
+    if (currentIndex > 0) {
+      setActiveChapter(flattenedChapters[currentIndex - 1]);
+    }
+  };
+
+  const handleNextChapter = () => {
+    if (!activeChapter) return;
+    const currentIndex = flattenedChapters.findIndex(c => c.id === activeChapter.id);
+    if (currentIndex < flattenedChapters.length - 1) {
+      setActiveChapter(flattenedChapters[currentIndex + 1]);
+    }
   };
 
   const updateChapterContent = (chapterId: string, content: string) => {
@@ -62,9 +154,7 @@ export default function BookPage() {
       if (book.id === bookId) {
         return {
           ...book,
-          chapters: book.chapters.map((ch) =>
-            ch.id === chapterId ? { ...ch, content } : ch
-          ),
+          chapters: updateNodeInTree(book.chapters, chapterId, { content }),
         };
       }
       return book;
@@ -80,8 +170,6 @@ export default function BookPage() {
   // This state helps prevent a flash of "Not Found" while data loads from localStorage
   const [isReady, setIsReady] = useState(false);
   useEffect(() => {
-      // The hook now initializes with data, so we can set ready immediately.
-      // A small delay might still be good for visual consistency on fast reloads.
       const timer = setTimeout(() => setIsReady(true), 50);
       return () => clearTimeout(timer);
   }, []);
@@ -160,6 +248,8 @@ export default function BookPage() {
               chapter={activeChapter} 
               updateChapterContent={updateChapterContent}
               fullContext={{ book: currentBook, characters, worldSettings }}
+              onNextChapter={handleNextChapter}
+              onPreviousChapter={handlePreviousChapter}
               aiRole={aiRole}
               setAiRole={setAiRole}
               aiRoleDisplay={aiRoleDisplay}

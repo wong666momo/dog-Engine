@@ -1,7 +1,7 @@
 'use client';
 
-import type { Character, Chapter } from '@/lib/types';
-import { useState } from 'react';
+import type { Character, BookNode } from '@/lib/types';
+import { useState, useMemo } from 'react';
 import { generateUUID } from '@/lib/utils';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -30,10 +30,28 @@ import { ScrollArea } from './ui/scroll-area';
 interface CharacterCardManagerProps {
   characters: Character[];
   setCharacters: (characters: Character[]) => void;
-  chapters?: Chapter[];
+  chapters?: BookNode[];
 }
 
-export default function CharacterCardManager({ characters, setCharacters, chapters = [] }: CharacterCardManagerProps) {
+const flattenNodes = (nodes: BookNode[]): BookNode[] => {
+  const fileNodes: BookNode[] = [];
+  const traverse = (nodeList: BookNode[]) => {
+    for (const node of nodeList) {
+      if (node.type === 'file') {
+        fileNodes.push(node);
+      }
+      if (node.children) {
+        traverse(node.children);
+      }
+    }
+  };
+  traverse(nodes);
+  return fileNodes;
+};
+
+export default function CharacterCardManager({ characters, setCharacters, chapters: chapterNodes = [] }: CharacterCardManagerProps) {
+  const chapters = useMemo(() => flattenNodes(chapterNodes), [chapterNodes]);
+
   const [isNewItemDialogOpen, setIsNewItemDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Character | null>(null);
   

@@ -1,6 +1,6 @@
 'use client';
 
-import type { Chapter, Book, WorldSetting, Character, CommunityPrompt } from '@/lib/types';
+import type { BookNode, Book, WorldSetting, Character, CommunityPrompt } from '@/lib/types';
 import { respondToPromptInRole } from '@/ai/flows/respond-to-prompt-in-role';
 import { listModels, type Model } from '@/ai/flows/list-models';
 import { getPrompts } from '@/lib/actions/community';
@@ -9,7 +9,7 @@ import { Textarea } from './ui/textarea';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Bot, Sparkles, Loader2, Settings2, Users, BookOpen, BrainCircuit, ScanLine, Shuffle, SpellCheck2, ChevronRight, ClipboardCopy } from 'lucide-react';
+import { Bot, Sparkles, Loader2, Settings2, Users, BookOpen, BrainCircuit, ScanLine, Shuffle, SpellCheck2, ChevronLeft, ChevronRight, ClipboardCopy } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from './ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger, DialogClose } from './ui/dialog';
@@ -37,13 +37,15 @@ import { useRouter } from 'next/navigation';
 
 
 interface EditorProps {
-  chapter: Chapter;
+  chapter: BookNode;
   updateChapterContent: (chapterId: string, content: string) => void;
   fullContext: {
     book: Book;
     worldSettings: WorldSetting[];
     characters: Character[];
   };
+  onNextChapter: () => void;
+  onPreviousChapter: () => void;
   aiRole: string;
   setAiRole: (role: string) => void;
   aiRoleDisplay: string;
@@ -56,13 +58,15 @@ export default function Editor({
     chapter, 
     updateChapterContent, 
     fullContext,
+    onNextChapter,
+    onPreviousChapter,
     aiRole,
     setAiRole,
     aiRoleDisplay,
     setAiRoleDisplay,
 }: EditorProps) {
   const router = useRouter();
-  const [content, setContent] = useState(chapter.content);
+  const [content, setContent] = useState(chapter.content || '');
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
@@ -612,10 +616,21 @@ ${fullChapterContext ? `\n=== 当前章节内容 ===\n${fullChapterContext}\n` :
                 onChange={handleContentChange}
                 placeholder="在这里开始你的故事..."
                 className="w-full h-full text-base resize-none border-0 focus:ring-0 focus-visible:ring-0 p-4 sm:p-6 bg-transparent"
-                style={{minHeight: 'calc(100vh - 160px)'}}
+                style={{minHeight: 'calc(100vh - 210px)'}}
             />
             <div ref={bottomSentinelRef} className="h-1" />
         </ScrollArea>
+
+        <div className="flex-shrink-0 border-t p-2 flex justify-between items-center">
+            <Button variant="outline" onClick={onPreviousChapter}>
+                <ChevronLeft className="h-4 w-4 mr-2" />
+                上一章
+            </Button>
+            <Button variant="outline" onClick={onNextChapter}>
+                下一章
+                <ChevronRight className="h-4 w-4 ml-2" />
+            </Button>
+        </div>
         
         {/* 底部浮出操作条（接近页面底部时显示） */}
         {showFab && (

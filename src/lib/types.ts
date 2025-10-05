@@ -2,18 +2,25 @@
 
 import type { ReviewManuscriptOutput } from "@/ai/flows/review-manuscript";
 
-export interface Chapter {
+export type BookNodeType = 'file' | 'folder';
+
+// This replaces the old Chapter interface to support nesting
+export interface BookNode {
   id: string;
   title: string;
-  content: string;
+  type: BookNodeType;
+  // For files
+  content?: string;
   url?: string; // For bookstore chapters
+  // For folders
+  children?: BookNode[];
 }
 
 export interface Book {
   id: string;
   title: string;
   description: string;
-  chapters: Chapter[];
+  chapters: BookNode[];
   author?: string;
   cover?: string;
   category?: string;
